@@ -17,25 +17,49 @@ function App() {
   const [columns, setColumns] = useState([]);
   const [mapping, setMapping] = useState({});
   const [modalVisible, setModalVisible] = useState(false);
+  const [fileList, setFileList] = useState([]);
 
-  // 处理Excel文件
-  const handleExcel = (file) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const json = XLSX.utils.sheet_to_json(worksheet);
-      if (json.length === 0) {
-        message.error('Excel内容为空');
-        return;
-      }
-      setExcelData(json);
-      setColumns(Object.keys(json[0]));
-      setModalVisible(true);
-    };
-    reader.readAsArrayBuffer(file);
+  // 处理多个Excel文件
+  const handleExcel = (file, fileListRaw) => {
+    const files = fileListRaw || [file];
+    setFileList(files);
+    let allData = [];
+    let allColumns = new Set();
+    let readCount = 0;
+    files.forEach(f => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(worksheet);
+        if (json.length === 0) {
+          message.error(`${f.name} 内容为空`);
+        } else {
+          allData = allData.concat(json);
+          Object.keys(json[0]).forEach(col => allColumns.add(col));
+        }
+        readCount++;
+        if (readCount === files.length) {
+          if (allData.length === 0) {
+            message.error('所有Excel内容为空');
+            return;
+          }
+          setExcelData(allData);
+          setColumns(Array.from(allColumns));
+          // 自动字段映射：表头与飞书字段名智能匹配
+          const autoMap = {};
+          Array.from(allColumns).forEach(col => {
+            const match = feishuFields.find(f => f.label === col || f.key === col);
+            if (match) autoMap[col] = match.key;
+          });
+          setMapping(autoMap);
+          setModalVisible(true);
+        }
+      };
+      reader.readAsArrayBuffer(f);
+    });
     return false; // 阻止自动上传
   };
 
@@ -44,9 +68,8 @@ function App() {
     setMapping({ ...mapping, [excelCol]: feishuKey });
   };
 
-  // 导入到飞书（伪代码，需替换为实际API调用）
-  const importToFeishu = () => {
-    // 构造飞书API需要的数据结构
+  // 导入到飞书（需补充API鉴权和表格ID等参数）
+  const importToFeishu = async () => {
     const mappedData = excelData.map(row => {
       const obj = {};
       Object.entries(mapping).forEach(([excelCol, feishuKey]) => {
@@ -54,8 +77,26 @@ function App() {
       });
       return obj;
     });
-    // TODO: 调用飞书API批量导入 mappedData
-    message.success('数据已准备好，可调用飞书API导入');
+    // 示例API调用（需替换为实际表格ID和鉴权）
+    try {
+      // const res = await fetch('https://open.feishu.cn/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_create', {
+      //   method: 'POST',
+      //   headers: {
+      //     'Authorization': 'Bearer {token}',
+      //     'Content-Type': 'application/json'
+      //   },
+      //   body: JSON.stringify({ records: mappedData.map(data => ({ fields: data })) })
+      // });
+      // const result = await res.json();
+      // if (result.code === 0) {
+      //   message.success('导入成功');
+      // } else {
+      //   message.error('导入失败：' + result.msg);
+      // }
+      message.success('数据已准备好，可调用飞书API导入（请补充鉴权和表格ID）');
+    } catch (err) {
+      message.error('导入失败：' + err.message);
+    }
     setModalVisible(false);
   };
 
@@ -63,12 +104,17 @@ function App() {
     <div style={{ maxWidth: 900, margin: '40px auto', padding: 24, background: '#fff', borderRadius: 8 }}>
       <h2>Excel 导入飞书多维表格</h2>
       <Upload
-        beforeUpload={handleExcel}
-        showUploadList={false}
+        beforeUpload={(file, fileListRaw) => handleExcel(file, fileListRaw)}
+        showUploadList={true}
         accept=".xlsx,.xls"
         multiple
+        fileList={fileList}
+        onRemove={file => {
+          const newList = fileList.filter(f => f.uid !== file.uid);
+          setFileList(newList);
+        }}
       >
-        <Button icon={<UploadOutlined />}>拖拽或点击上传 Excel 文件</Button>
+        <Button icon={<UploadOutlined />}>拖拽或点击上传多个 Excel 文件</Button>
       </Upload>
       <Modal
         title="字段映射"
