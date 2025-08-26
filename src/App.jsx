@@ -7,8 +7,9 @@ const { Option } = Select;
 
 // 飞书API参数
 const APP_TOKEN = 'VTBgbN0PFa89swsnc6ic7RLHnLc';
-const TABLE_ID = 'tblFkhgOCzowbyt5';
-const FEISHU_API = `https://open.feishu.cn/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${TABLE_ID}/fields`;
+// 支持多表选择
+const TABLE_LIST_API = `https://open.feishu.cn/open-apis/bitable/v1/apps/${APP_TOKEN}/tables`;
+const FEISHU_API = (tableId) => `https://open.feishu.cn/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${tableId}/fields`;
 // 自动填充 user_access_token（仅限个人测试，勿公开部署）
 const FEISHU_TOKEN = 'u-cCGr2Gq51fEXWXF8EZxqKo545yAkkhwpi200l1q82BGx';
 
@@ -19,13 +20,38 @@ function App() {
   const [modalVisible, setModalVisible] = useState(false);
   const [fileList, setFileList] = useState([]);
   const [feishuFields, setFeishuFields] = useState([]);
+  const [tableList, setTableList] = useState([]);
+  const [selectedTable, setSelectedTable] = useState('');
 
-  // 获取飞书字段名
+  // 获取多维表格所有表
+  useEffect(() => {
+    async function fetchTables() {
+      if (!FEISHU_TOKEN) return;
+      try {
+        const res = await fetch(TABLE_LIST_API, {
+          headers: { Authorization: `Bearer ${FEISHU_TOKEN}` }
+        });
+        const result = await res.json();
+        if (result.code === 0 && result.data.tables) {
+          setTableList(result.data.tables.map(t => ({ id: t.id, name: t.name })));
+          // 默认选第一个表
+          if (result.data.tables.length > 0) setSelectedTable(result.data.tables[0].id);
+        } else {
+          message.error('获取数据表列表失败：' + (result.msg || result.code));
+        }
+      } catch (err) {
+        message.error('获取数据表列表异常：' + err.message);
+      }
+    }
+    fetchTables();
+  }, []);
+
+  // 根据选中的表获取字段名
   useEffect(() => {
     async function fetchFields() {
-      if (!FEISHU_TOKEN) return; // 未配置token时不请求
+      if (!FEISHU_TOKEN || !selectedTable) return;
       try {
-        const res = await fetch(FEISHU_API, {
+        const res = await fetch(FEISHU_API(selectedTable), {
           headers: { Authorization: `Bearer ${FEISHU_TOKEN}` }
         });
         const result = await res.json();
@@ -39,7 +65,7 @@ function App() {
       }
     }
     fetchFields();
-  }, []);
+  }, [selectedTable]);
 
   // 处理多个Excel文件
   const handleExcel = (file, fileListRaw) => {
@@ -173,6 +199,19 @@ function App() {
   return (
     <div style={{ maxWidth: 900, margin: '40px auto', padding: 24, background: '#fff', borderRadius: 8 }}>
       <h2>Excel 导入飞书多维表格</h2>
+      <div style={{ marginBottom: 16 }}>
+        <span>选择导入的数据表：</span>
+        <Select
+          style={{ width: 220 }}
+          value={selectedTable}
+          onChange={setSelectedTable}
+          placeholder="请选择数据表"
+        >
+          {tableList.map(t => (
+            <Option key={t.id} value={t.id}>{t.name}</Option>
+          ))}
+        </Select>
+      </div>
       <Upload
         beforeUpload={(file, fileListRaw) => handleExcel(file, fileListRaw)}
         showUploadList={true}
