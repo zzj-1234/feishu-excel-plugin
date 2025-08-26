@@ -1,16 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Upload, Button, Table, Modal, Select, message } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
 
 const { Option } = Select;
 
-// 示例：飞书多维表格字段名（实际应通过API获取）
-const feishuFields = [
-  { key: 'name', label: '姓名' },
-  { key: 'age', label: '年龄' },
-  { key: 'department', label: '部门' },
-];
+// 飞书API参数
+const APP_TOKEN = 'VTBgbN0PFa89swsnc6ic7RLHnLc';
+const TABLE_ID = 'tblFkhgOCzowbyt5';
+const FEISHU_API = `https://open.feishu.cn/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${TABLE_ID}/fields`;
+// 自动填充 user_access_token（仅限个人测试，勿公开部署）
+const FEISHU_TOKEN = 'u-cCGr2Gq51fEXWXF8EZxqKo545yAkkhwpi200l1q82BGx';
 
 function App() {
   const [excelData, setExcelData] = useState([]);
@@ -18,6 +18,28 @@ function App() {
   const [mapping, setMapping] = useState({});
   const [modalVisible, setModalVisible] = useState(false);
   const [fileList, setFileList] = useState([]);
+  const [feishuFields, setFeishuFields] = useState([]);
+
+  // 获取飞书字段名
+  useEffect(() => {
+    async function fetchFields() {
+      if (!FEISHU_TOKEN) return; // 未配置token时不请求
+      try {
+        const res = await fetch(FEISHU_API, {
+          headers: { Authorization: `Bearer ${FEISHU_TOKEN}` }
+        });
+        const result = await res.json();
+        if (result.code === 0 && result.data.fields) {
+          setFeishuFields(result.data.fields.map(f => ({ key: f.id, label: f.name })));
+        } else {
+          message.error('飞书字段获取失败：' + (result.msg || result.code));
+        }
+      } catch (err) {
+        message.error('飞书字段获取异常：' + err.message);
+      }
+    }
+    fetchFields();
+  }, []);
 
   // 处理多个Excel文件
   const handleExcel = (file, fileListRaw) => {
