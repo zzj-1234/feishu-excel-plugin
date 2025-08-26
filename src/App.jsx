@@ -70,11 +70,59 @@ function App() {
           }
           setExcelData(allData);
           setColumns(Array.from(allColumns));
-          // 自动字段映射：表头与飞书字段名智能匹配
+          // 自动字段映射：表头与飞书字段名智能模糊匹配
+          function getSimilarity(a, b) {
+            // Levenshtein 距离
+            const matrix = Array(a.length + 1).fill(null).map(() => Array(b.length + 1).fill(null));
+            for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
+            for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+            for (let i = 1; i <= a.length; i++) {
+              for (let j = 1; j <= b.length; j++) {
+                const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                matrix[i][j] = Math.min(
+                  matrix[i - 1][j] + 1,
+                  matrix[i][j - 1] + 1,
+                  matrix[i - 1][j - 1] + cost
+                );
+              }
+            }
+            return 1 - matrix[a.length][b.length] / Math.max(a.length, b.length);
+          }
+
           const autoMap = {};
           Array.from(allColumns).forEach(col => {
-            const match = feishuFields.find(f => f.label === col || f.key === col);
-            if (match) autoMap[col] = match.key;
+            let bestMatch = null;
+            let bestScore = 0;
+            feishuFields.forEach(f => {
+              // 1. 完全相等
+              if (f.label === col || f.key === col) {
+                bestMatch = f;
+                bestScore = 1;
+              }
+              // 2. 包含关系
+              else if (f.label.includes(col) || col.includes(f.label)) {
+                if (0.9 > bestScore) {
+                  bestMatch = f;
+                  bestScore = 0.9;
+                }
+              }
+              // 3. 首字母（中文转拼音首字母可扩展）
+              else if (f.label[0] === col[0]) {
+                if (0.7 > bestScore) {
+                  bestMatch = f;
+                  bestScore = 0.7;
+                }
+              }
+              // 4. Levenshtein 距离相似度
+              else {
+                const sim = getSimilarity(f.label, col);
+                if (sim > bestScore && sim > 0.6) {
+                  bestMatch = f;
+                  bestScore = sim;
+                }
+              }
+            });
+            if (bestMatch) autoMap[col] = bestMatch.key;
           });
           setMapping(autoMap);
           setModalVisible(true);
